@@ -162,6 +162,14 @@ sudo systemctl enable kubelet
 sudo kubeadm config images pull
 ```
 
+10. Install calicoctl as a binary on a single host
+
+```
+curl -L https://github.com/projectcalico/calico/releases/download/v3.27.2/calicoctl-linux-amd64 -o calicoctl
+chmod +x ./calicoctl
+sudo mv calicoctl /usr/local/bin
+```
+
 ## Build k8s cluster (Manually)
 
 __If you build cluster manually instead of automatically using vshpere api.__
@@ -206,7 +214,132 @@ kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/
 
 > If your environment is under proxy, you may need copy all images of flannel from local resource.
 
-3. Install MetalLB
+2. Install Calico
+
+```
+mkdir calico
+cd ./calico
+wget https://raw.githubusercontent.com/projectcalico/calico/v3.27.2/manifests/tigera-operator.yaml
+wget https://raw.githubusercontent.com/projectcalico/calico/v3.27.2/manifests/custom-resources.yaml
+```
+
+Modify cutom-resources.yaml
+
+```
+# This section includes base Calico installation configuration.
+# For more information, see: https://docs.tigera.io/calico/latest/reference/installation/api#operator.tigera.io/v1.Installation
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  registry: 10.2.23.129:5000
+  # Configures Calico networking.
+  calicoNetwork:
+    # Note: The ipPools section cannot be modified post-install.
+    nodeAddressAutodetectionV4:
+      interface: ens3
+    bgp: Enabled
+    ipPools:
+    - blockSize: 26
+      cidr: 10.244.0.0/16
+      encapsulation: None
+      natOutgoing: Disabled
+      nodeSelector: all()
+
+---
+
+# This section configures the Calico API server.
+# For more information, see: https://docs.tigera.io/calico/latest/reference/installation/api#operator.tigera.io/v1.APIServer
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}
+
+```
+
+Kubectl create
+
+```
+kubectl create -f tigera-operator.yaml
+kubectl create -f custom-resources.yaml
+```
+
+Before configuring BGP, the static routes on all the nodes netplan towards the leaf loopback ip need to be configured.
+
+```
+- to: 1.0.0.0/24
+  via: 10.2.24.254
+```
+
+Adding label to node.
+
+```
+kubectl label nodes ub2204-k8s-master location=kyobashi
+kubectl label nodes ub2204-k8s-worker1 location=dojima
+kubectl label nodes ub2204-k8s-worker2 location=kobe
+```
+
+Apply Calico bgp configuration.
+
+```
+kubectl apply -f bgp-configuration.yaml
+```
+
+```
+apiVersion: projectcalico.org/v3
+kind: BGPConfiguration
+metadata:
+  name: default
+spec:
+  asNumber: 65531
+  listenPort: 178
+  logSeverityScreen: Info
+  nodeToNodeMeshEnabled: false
+  serviceClusterIPs:
+    - cidr: 10.96.0.0/12
+```
+
+Apply Calico bgp peer.
+
+```
+kubectl apply -f bgp-peers.yaml
+```
+
+```
+apiVersion: projectcalico.org/v3
+kind: BGPPeer
+items:
+- apiVersion: projectcalico.org/v3
+  kind: BGPPeer
+  metadata:
+    name: leaf1001-calico-master
+  spec:
+    peerIP: 1.0.0.1
+    asNumber: 65001
+    nodeSelector: location == 'kyobashi'
+
+- apiVersion: projectcalico.org/v3
+  kind: BGPPeer
+  metadata:
+    name: leaf1002-calico-worker1
+  spec:
+    peerIP: 1.0.0.2
+    asNumber: 65002
+    nodeSelector: location == 'dojima'
+
+- apiVersion: projectcalico.org/v3
+  kind: BGPPeer
+  metadata:
+    name: leaf1003-calico-worker2
+  spec:
+    peerIP: 1.0.0.3
+    asNumber: 65003
+    nodeSelector: location == 'kobe'
+```
+
+3. Install MetalLB (option)
 
 Layer 2 Configuration metallb_configmap.yaml.
 
