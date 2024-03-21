@@ -279,6 +279,12 @@ Adding label to node.
 kubectl label nodes ub2204-k8s-master location=kyobashi
 kubectl label nodes ub2204-k8s-worker1 location=dojima
 kubectl label nodes ub2204-k8s-worker2 location=kobe
+kubectl label nodes ub2204-k8s-master gpu=nomal
+kubectl label nodes ub2204-k8s-worker1 gpu=a100
+kubectl label nodes ub2204-k8s-worker2 gpu=a100
+kubectl label nodes ub2204-k8s-master sustainable=carbonless
+kubectl label nodes ub2204-k8s-worker1 sustainable=carbonless
+kubectl label nodes ub2204-k8s-worker2 sustainable=carbonful
 ```
 
 Apply Calico bgp configuration.
